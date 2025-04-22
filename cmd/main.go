@@ -15,7 +15,6 @@ import (
 	"github.com/vitalikir156/SR_authservice/internal/config"
 	customLogger "github.com/vitalikir156/SR_authservice/internal/logger"
 	"github.com/vitalikir156/SR_authservice/internal/repo"
-	"github.com/vitalikir156/SR_authservice/internal/service"
 )
 
 func main() {
@@ -41,24 +40,13 @@ func main() {
 		log.Fatal(errors.Wrap(err, "error initializing logger"))
 	}
 
-	repository, err := repo.NewRepository(context.Background(), cfg.PostgreSQL)
+	_, err = repo.NewRepository(context.Background(), cfg.PostgreSQL)
 	if err != nil {
 		log.Fatal(errors.Wrap(err, "failed to initialize repository"))
 	}
 
-	// Создание сервиса с бизнес-логикой
-	serviceInstance := service.NewService(repository, logger)
 
-	// Инициализация API
-	app := api.NewRouters(&api.Routers{Service: serviceInstance}, cfg.Rest.Token)
 
-	// Запуск HTTP-сервера в отдельной горутине
-	go func() {
-		logger.Infof("Starting server on %s", cfg.Rest.ListenAddress)
-		if err := app.Listen(cfg.Rest.ListenAddress); err != nil {
-			log.Fatal(errors.Wrap(err, "failed to start server"))
-		}
-	}()
 
 	// Ожидание системных сигналов для корректного завершения работы
 	signalChan := make(chan os.Signal, 1)
