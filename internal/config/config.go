@@ -15,6 +15,7 @@ type AppConfig struct {
 type GRPCConfig struct {  
     Port    int           `envconfig:"GRPC_PORT" required:"true"`  
     Timeout time.Duration `envconfig:"GRPC_TIMEOUT" default:"10h"`  
+	Secret string `envconfig:"GRPC_SECRET" default:"testsecret"`
 }
 
 type PostgreSQL struct {

@@ -8,6 +8,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pkg/errors"
 	"github.com/vitalikir156/SR_authservice/internal/config"
+	interrors "github.com/vitalikir156/SR_authservice/internal/errors"
+	"github.com/vitalikir156/SR_authservice/internal/types"
 )
 
 var (
@@ -17,25 +19,24 @@ var (
 	ErrEmptyName      = errors.New("name field is empty")
 )
 
-const taskstatusNew = "new"
+//const taskstatusNew = "new"
 
 type repository struct {
 	pool *pgxpool.Pool
 }
 
 type Repository interface {
-	CreateTask(ctx context.Context, task Task) (int, error)
-	GetTask(ctx context.Context, id int) (Task, error)
-	GetTasks(ctx context.Context) ([]Task, error)
-	GetTasksOverUID(ctx context.Context, uid int) ([]Task, error)
-	UpdateTask(ctx context.Context, task Task) error
-	DeleteTask(ctx context.Context, id int) error
+	CreateUser(ctx context.Context,login string, password string) (int, error)
+	GetUserOverID(ctx context.Context, id int) (types.User, error)
+	GetUserOverLogin(ctx context.Context, login string) (types.User, error)
+	UpdateUserPassword(ctx context.Context, login string, oldpass string, newpass string) error
+	DeleteUser(ctx context.Context, login string) error
 
-	CreateUser(ctx context.Context, user User) (int, error)
-	GetUser(ctx context.Context, id int) (User, error)
-	GetUsers(ctx context.Context) ([]User, error)
-	UpdateUser(ctx context.Context, user User) error
-	DeleteUser(ctx context.Context, id int) error
+	CreateToken(ctx context.Context, token types.Token) (int, error)
+	GetToken(ctx context.Context, userid int) (types.Token, error)
+	DelToken(ctx context.Context, tokenid int) (error)
+	UpdateToken(ctx context.Context, token types.Token) (error)
+	//CheckToken(ctx context.Context, userid int) (types.Token, error)
 }
 
 func NewRepository(ctx context.Context, conf config.PostgreSQL) (Repository, error) {
@@ -68,79 +69,69 @@ func NewRepository(ctx context.Context, conf config.PostgreSQL) (Repository, err
 	return &repository{pool}, nil
 }
 
-func (r *repository) CreateTask(ctx context.Context, task Task) (int, error) {
-	if len(task.Status) == 0 {
-		task.Status = taskstatusNew
+//TODO: use transaction
+func (r *repository) CreateUser(ctx context.Context, login string, password string) (int, error) {
+	if len(login) == 0 {
+		return -1, ErrEmptyName
 	}
-	if task.Status != taskstatusNew && task.Status != "in_progress" && task.Status != "done" {
-		return -1, ErrBadStatus
-	}
-	query := "INSERT INTO tasks (title, description, status, user_id) VALUES ($1, $2, $3, $4) RETURNING id"
-	var id int
-	err := r.pool.QueryRow(ctx, query, task.Title, task.Description, task.Status, task.UID).Scan(&id)
+
+	tx, err :=	r.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
 	if err != nil {
-		return -1, errors.Wrap(err, "failed to insert task")
+		return -1, err
+	}
+	defer func() {
+		tx.Rollback(ctx)
+	}()
+
+	err = tx.QueryRow(ctx, "SELECT from users where uname = $1", login).Scan()
+
+	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows){return -1, err}
+	} else
+	{return -1, interrors.ErrBusyLogin}
+
+	query := "INSERT INTO users (uname, password) VALUES ($1, $2) RETURNING id"
+	var id int
+	err = tx.QueryRow(ctx, query, login, password).Scan(&id)
+	if err != nil {
+		return -1, errors.Wrap(err, "failed to insert user")
+	}
+	err = tx.Commit(ctx)
+	if err != nil {
+		return -1, err
 	}
 	return id, nil
 }
 
-func (r *repository) GetTask(ctx context.Context, id int) (Task, error) {
-	var task Task
-	query := "SELECT id, title, description, status, created_at, user_id from tasks where id = $1"
-	err := r.pool.QueryRow(ctx, query, id).Scan(&task.ID, &task.Title,
-		&task.Description, &task.Status, &task.Created, &task.UID)
+func (r *repository) GetUserOverID(ctx context.Context, id int) (types.User, error) {
+	var user types.User
+	query := "SELECT id, uname, taskread, taskwrite, userread, userwrite, password from users where id = $1"
+	err := r.pool.QueryRow(ctx, query, id).Scan(&user.ID, &user.Name, &user.Taskread,
+		&user.Taskwrite, &user.Userread, &user.Userwrite, &user.Password)
 	if err != nil {
-		return Task{}, errors.Wrap(err, "failed to get task")
+		return types.User{}, errors.Wrap(err, "failed to get user")
 	}
 
-	return task, nil
+	return user, nil
 }
 
-func (r *repository) GetTasks(ctx context.Context) ([]Task, error) {
-	query := "SELECT id, title, description, status, created_at, user_id from tasks"
-	rows, err := r.pool.Query(ctx, query)
+func (r *repository) GetUserOverLogin(ctx context.Context, login string) (types.User, error) {
+	var user types.User
+	query := "SELECT id, uname, taskread, taskwrite, userread, userwrite, password from users where uname = $1"
+	err := r.pool.QueryRow(ctx, query, login).Scan(&user.ID, &user.Name, &user.Taskread,
+		&user.Taskwrite, &user.Userread, &user.Userwrite, &user.Password)
 	if err != nil {
-		return []Task{}, errors.Wrap(err, "query fault")
+		return types.User{}, errors.Wrap(err, "failed to get user")
 	}
-	defer rows.Close()
-	var tasks []Task
-	for rows.Next() {
-		var task Task
-		err = rows.Scan(&task.ID, &task.Title, &task.Description, &task.Status, &task.Created, &task.UID)
-		if err != nil {
-			return []Task{}, errors.Wrap(err, "query scan fault")
-		}
-		tasks = append(tasks, task)
-	}
-	return tasks, nil
+
+	return user, nil
 }
 
-func (r *repository) GetTasksOverUID(ctx context.Context, uid int) ([]Task, error) {
-	query := "SELECT id, title, description, status, created_at, user_id from tasks where user_id=$1"
-	rows, err := r.pool.Query(ctx, query, uid)
-	if err != nil {
-		return []Task{}, errors.Wrap(err, "query fault")
-	}
-	defer rows.Close()
-	var tasks []Task
-	for rows.Next() {
-		var task Task
-		err = rows.Scan(&task.ID, &task.Title, &task.Description, &task.Status, &task.Created, &task.UID)
-		if err != nil {
-			return []Task{}, errors.Wrap(err, "query scan fault")
-		}
-		tasks = append(tasks, task)
-	}
-	return tasks, nil
-}
 
-func (r *repository) UpdateTask(ctx context.Context, task Task) error {
-	if task.Status != taskstatusNew && task.Status != "in_progress" && task.Status != "done" {
-		return ErrBadStatus
-	}
-	query := "UPDATE tasks SET title = $1, description = $2, status = $3, user_id = $4 where id=$5"
-	out, err := r.pool.Exec(ctx, query,
-		task.Title, task.Description, task.Status, task.UID, task.ID)
+//TODO: check old password
+func (r *repository) UpdateUserPassword(ctx context.Context, login string, oldpass string, newpass string) error {
+	query := "UPDATE users SET password = $1 where uname=$2"
+	out, err := r.pool.Exec(ctx, query, newpass, login)
 	if err != nil {
 		return errors.Wrap(err, "update fault")
 	}
@@ -150,9 +141,9 @@ func (r *repository) UpdateTask(ctx context.Context, task Task) error {
 	return nil
 }
 
-func (r *repository) DeleteTask(ctx context.Context, id int) error {
-	query := "DELETE FROM tasks where id=$1"
-	out, err := r.pool.Exec(ctx, query, id)
+func (r *repository) DeleteUser(ctx context.Context, login string) error {
+	query := "DELETE FROM users where uname=$1"
+	out, err := r.pool.Exec(ctx, query, login)
 	if err != nil {
 		return errors.Wrap(err, "delete fault")
 	}
@@ -163,67 +154,53 @@ func (r *repository) DeleteTask(ctx context.Context, id int) error {
 	return nil
 }
 
-func (r *repository) CreateUser(ctx context.Context, user User) (int, error) {
-	if len(user.Name) == 0 {
-		return -1, ErrEmptyName
-	}
-
-	query := "INSERT INTO users (uname) VALUES ($1) RETURNING id"
+func (r *repository) CreateToken(ctx context.Context, token types.Token) (int, error) {
+	query := "INSERT INTO tokens (user_id, token) VALUES ($1, $2) RETURNING id"
 	var id int
-	err := r.pool.QueryRow(ctx, query, user.Name).Scan(&id)
+	err := r.pool.QueryRow(ctx, query, token.UID, token.Token).Scan(&id)
 	if err != nil {
-		return -1, errors.Wrap(err, "failed to insert user")
+		return -1, errors.Wrap(err, "failed to insert token")
 	}
 	return id, nil
 }
 
-func (r *repository) GetUser(ctx context.Context, id int) (User, error) {
-	var user User
-	query := "SELECT id, uname, taskread, taskwrite, userread, userwrite from users where id = $1"
-	err := r.pool.QueryRow(ctx, query, id).Scan(&user.ID, &user.Name, &user.Taskread,
-		&user.Taskwrite, &user.Userread, &user.Userwrite)
+func (r *repository) GetToken(ctx context.Context, userid int) (types.Token, error) {
+	var token types.Token
+	query := "SELECT id, user_id, token, created_at from tokens where user_id = $1"
+	err := r.pool.QueryRow(ctx, query, userid).Scan(&token.ID, &token.UID, &token.Token,
+		&token.Created)
 	if err != nil {
-		return User{}, errors.Wrap(err, "failed to get user")
+		return types.Token{}, errors.Wrap(err, "failed to get token")
 	}
 
-	return user, nil
+	return token, nil
 }
-
-func (r *repository) GetUsers(ctx context.Context) ([]User, error) {
-	query := "SELECT id, uname, taskread, taskwrite, userread, userwrite from users"
-	rows, err := r.pool.Query(ctx, query)
+func (r *repository) UpdateToken(ctx context.Context, token types.Token) (error) {
+	query := "UPDATE tokens SET token = $1 where user_id = $2"
+	out, err := r.pool.Exec(ctx, query, token.Token, token.UID)
 	if err != nil {
-		return []User{}, errors.Wrap(err, "query fault")
+		errors.Wrap(err, "failed to update token")
 	}
-	defer rows.Close()
-	var users []User
-	for rows.Next() {
-		var user User
-		err = rows.Scan(&user.ID, &user.Name, &user.Taskread, &user.Taskwrite, &user.Userread, &user.Userwrite)
-		if err != nil {
-			return []User{}, errors.Wrap(err, "query scan fault")
-		}
-		users = append(users, user)
-	}
-	return users, nil
-}
-
-func (r *repository) UpdateUser(ctx context.Context, user User) error {
-	query := "UPDATE users SET uname = $1, taskread = $2, taskwrite = $3, userread = $4, userwrite = $5 where id=$6"
-	out, err := r.pool.Exec(ctx, query,
-		user.Name, user.Taskread, user.Taskwrite, user.Userread, user.Userwrite, user.ID)
-	if err != nil {
-		return errors.Wrap(err, "update fault")
-	}
-	if out.RowsAffected() < 1 {
+	if out.RowsAffected() != 1 {
 		return ErrTaskNotFound
 	}
+
 	return nil
 }
+func (r *repository) CheckToken(ctx context.Context, userid int) (types.Token, error) {
+	var token types.Token
+	query := "SELECT id, user_id, token, created_at from tokens where user_id = $1"
+	err := r.pool.QueryRow(ctx, query, userid).Scan(&token.ID, &token.UID, &token.Token,
+		&token.Created)
+	if err != nil {
+		return types.Token{}, errors.Wrap(err, "failed to get token")
+	}
 
-func (r *repository) DeleteUser(ctx context.Context, id int) error {
-	query := "DELETE FROM users where id=$1"
-	out, err := r.pool.Exec(ctx, query, id)
+	return token, nil
+}
+func (r *repository) DelToken(ctx context.Context, tokenid int) (error) {
+	query := "DELETE FROM tokens where id=$1"
+	out, err := r.pool.Exec(ctx, query, tokenid)
 	if err != nil {
 		return errors.Wrap(err, "delete fault")
 	}

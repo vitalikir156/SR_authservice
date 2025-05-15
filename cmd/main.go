@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"log"
 	"os"
 	"os/signal"
@@ -12,9 +11,9 @@ import (
 	"github.com/pkg/errors"
 	"github.com/spf13/pflag"
 
+	"github.com/vitalikir156/SR_authservice/internal/app"
 	"github.com/vitalikir156/SR_authservice/internal/config"
 	customLogger "github.com/vitalikir156/SR_authservice/internal/logger"
-	"github.com/vitalikir156/SR_authservice/internal/repo"
 )
 
 func main() {
@@ -40,18 +39,16 @@ func main() {
 		log.Fatal(errors.Wrap(err, "error initializing logger"))
 	}
 
-	_, err = repo.NewRepository(context.Background(), cfg.PostgreSQL)
-	if err != nil {
-		log.Fatal(errors.Wrap(err, "failed to initialize repository"))
-	}
+application := app.New(logger, cfg, cfg.GRPCConfig.Timeout)
 
-
-
+go func() {
+	application.GRPCServer.MustRun()
+}()
 
 	// Ожидание системных сигналов для корректного завершения работы
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
 	<-signalChan
-
+	application.GRPCServer.Stop()
 	logger.Info("Shutting down gracefully...")
 }

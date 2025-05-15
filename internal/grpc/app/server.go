@@ -1,16 +1,14 @@
 package grpcsrv
 
 import (
-	"context"
 	"fmt"
-	"log"
 	"log/slog"
 	"net"
 
 	// Сгенерированный код
 
 	//"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
-	"github.com/vitalikir156/SR_authservice/internal/grpc/auth/authgrpc"
+	authgrpc "github.com/vitalikir156/SR_authservice/internal/grpc/auth"
 
 	protogenerated "github.com/vitalikir156/SR_authservice/internal/grpc/protogenerated"
 	"go.uber.org/zap"
@@ -19,7 +17,7 @@ import (
 type UserServiceServer struct {
     protogenerated.UnimplementedAuthServiceServer
 }
-
+/*
 // Метод GetUser
 func (s *UserServiceServer) Login(ctx context.Context, req *protogenerated.LoginRequest) (*protogenerated.LoginResponse, error) {
     log.Printf("Получен запрос на пользователя с ID: %s", req.Username)
@@ -28,7 +26,7 @@ func (s *UserServiceServer) Login(ctx context.Context, req *protogenerated.Login
         Token:  "Testtoken123",
     }, nil
 }
-
+*/
 
 type App struct {
 	log        *zap.SugaredLogger

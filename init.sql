@@ -4,14 +4,13 @@ CREATE TABLE users (
     taskread boolean,
     taskwrite boolean,
     userread boolean,
-    userwrite boolean
+    userwrite boolean,
+    password TEXT NOT NULL
 );
-CREATE TABLE tasks (
-    id SERIAL PRIMARY KEY,
+CREATE TABLE tokens (
+    id BIGSERIAL PRIMARY KEY,
     user_id INT REFERENCES users(id) ON DELETE CASCADE,
-    title TEXT NOT NULL,
-    description TEXT,
-    status TEXT CHECK (status IN ('new', 'in_progress', 'done')) DEFAULT 'new',
+    token TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT now()
 );
 

@@ -4,15 +4,15 @@ import (
 	"context"
 	"time"
 
-	"github.com/vitalikir156/SR_authservice/internal/grpc/app/grpcsrv"
-
 	"github.com/pkg/errors"
 	"github.com/vitalikir156/SR_authservice/internal/config"
+	grpcsrv "github.com/vitalikir156/SR_authservice/internal/grpc/app"
 	"github.com/vitalikir156/SR_authservice/internal/repo"
+	auth "github.com/vitalikir156/SR_authservice/internal/service"
 	"go.uber.org/zap"
 )
 type App struct {
-	GRPCServer *App
+	GRPCServer *grpcsrv.App
 }
 
 func New(
@@ -20,7 +20,7 @@ func New(
 	config config.AppConfig,
 	tokenTTL time.Duration,
 ) *App {
-	_, err := repo.NewRepository(context.Background(), config.PostgreSQL)
+	storage, err := repo.NewRepository(context.Background(), config.PostgreSQL)
 	if err != nil {
 		log.Fatal(errors.Wrap(err, "failed to initialize repository"))
 	}
@@ -28,9 +28,9 @@ func New(
 		panic(err)
 	}
 
-	//authService := auth.New(log, storage, storage, storage, tokenTTL)
+	authService := auth.New(log, storage, storage, config.GRPCConfig.Timeout, config.GRPCConfig.Secret)
 
-	grpcApp := grpcsrv.New(log, _, config.GRPCConfig.Port)
+	grpcApp := grpcsrv.New(log, authService, config.GRPCConfig.Port)
 
 	return &App{
 		GRPCServer: grpcApp,

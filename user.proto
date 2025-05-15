@@ -4,17 +4,53 @@ option go_package = "vitalikir156.protogenerated;protogenerated";
 service AuthService {
 rpc Register (RegisterRequest) returns (RegisterResponse);
 rpc Login (LoginRequest) returns (LoginResponse);
+rpc CheckToken (TokenRequest) returns (TokenResponse);
+rpc UpdatePassword (PassUpdRequest) returns (PassUpdResponse);
+rpc SelfDeleteUser (SelfDelRequest) returns (SelfDelResponse);
 }
 message RegisterRequest {
 string username = 1;
 string password = 2;
 }
+
 message RegisterResponse {
 string message = 1;
-}message LoginRequest {
+}
+
+message LoginRequest {
 string username = 1;
 string password = 2;
 }
+
 message LoginResponse {
 string token = 1;
+}
+
+message TokenRequest {
+string username = 1;
+string token = 2;
+}
+
+message TokenResponse {
+bool valid = 1;
+}
+
+message PassUpdRequest {
+string username = 1;
+string oldpass = 2;
+string newpass = 3;
+string token = 4;
+}
+
+message PassUpdResponse {
+bool success = 1;
+}
+
+message SelfDelRequest {
+string username = 1;
+string token = 2;
+}
+
+message SelfDelResponse {
+bool success = 1;
 }
