@@ -1,0 +1,54 @@
+package main
+
+import (
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/joho/godotenv"
+	"github.com/kelseyhightower/envconfig"
+	"github.com/pkg/errors"
+	"github.com/spf13/pflag"
+
+	"github.com/vitalikir156/SR_authservice/internal/app"
+	"github.com/vitalikir156/SR_authservice/internal/config"
+	customLogger "github.com/vitalikir156/SR_authservice/internal/logger"
+)
+
+func main() {
+	loadenv := pflag.BoolP("loadenv", "e", false, "load .env file")
+	pflag.Parse()
+
+	if *loadenv {
+		err := godotenv.Load()
+		if err != nil {
+			log.Fatal(errors.Wrap(err, "failed to load env file"))
+		}
+	}
+
+	// Загружаем конфигурацию из переменных окружения
+	var cfg config.AppConfig
+	if err := envconfig.Process("", &cfg); err != nil {
+		log.Fatal(errors.Wrap(err, "failed to load configuration"))
+	}
+
+	// Инициализация логгера
+	logger, err := customLogger.NewLogger(cfg.LogLevel)
+	if err != nil {
+		log.Fatal(errors.Wrap(err, "error initializing logger"))
+	}
+
+application := app.New(logger, cfg, cfg.GRPCConfig.Timeout)
+
+go func() {
+	application.GRPCServer.MustRun()
+}()
+
+	// Ожидание системных сигналов для корректного завершения работы
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
+	<-signalChan
+	application.GRPCServer.Stop()
+	logger.Info("Shutting down gracefully...")
+}
