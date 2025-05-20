@@ -130,8 +130,8 @@ func (r *repository) GetUserOverLogin(ctx context.Context, login string) (types.
 
 //TODO: check old password
 func (r *repository) UpdateUserPassword(ctx context.Context, login string, oldpass string, newpass string) error {
-	query := "UPDATE users SET password = $1 where uname=$2"
-	out, err := r.pool.Exec(ctx, query, newpass, login)
+	query := "UPDATE users SET password = $1 where uname=$2 and password=$3"
+	out, err := r.pool.Exec(ctx, query, newpass, login, oldpass)
 	if err != nil {
 		return errors.Wrap(err, "update fault")
 	}

@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	interrors "github.com/vitalikir156/SR_authservice/internal/errors"
 	"github.com/vitalikir156/SR_authservice/internal/jwt"
+	"github.com/vitalikir156/SR_authservice/internal/passhash"
 	"github.com/vitalikir156/SR_authservice/internal/types"
 	"go.uber.org/zap"
 )
@@ -66,9 +67,11 @@ func (a *Auth) Login(
 		}
 		return "", err
 	}
-	if user.Password != password {
+	
+	if !passhash.CheckPassword(password, user.Password) {
 		return "", interrors.ErrBadCred
 	}
+
 	token, err := a.tokenRepo.GetToken(ctx, user.ID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -104,7 +107,11 @@ func (a *Auth) Login(
 // RegisterNewUser registers new user in the system and returns user ID.
 // If user with given username already exists, returns error.
 func (a *Auth) RegisterNewUser(ctx context.Context, login string, pass string) (int, error) {
-	id, err := a.usrRepo.CreateUser(ctx, login, pass)
+	hashedpass, err:=passhash.HashPassword(pass)
+	if err != nil {
+		return 0, err
+	}
+	id, err := a.usrRepo.CreateUser(ctx, login, hashedpass)
 	if err != nil {
 		return 0, err
 	}
@@ -130,8 +137,15 @@ if claims.UserID!=user.ID || claims.Login!=login {
 }
 
 func (a *Auth) UpdatePassword(ctx context.Context, login string, oldpass string, newpass string) (error) {
-
-return  a.usrRepo.UpdateUserPassword(ctx, login, oldpass, newpass)
+	hashednewpass, err:=passhash.HashPassword(newpass)
+	if err != nil {
+		return err
+	}
+	hashedoldpass, err:=passhash.HashPassword(oldpass)
+	if err != nil {
+		return err
+	}
+return  a.usrRepo.UpdateUserPassword(ctx, login, hashedoldpass, hashednewpass)
 }
 
 func (a *Auth) DeleteUser(ctx context.Context, login string) (error) {
